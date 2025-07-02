@@ -1,0 +1,44 @@
+---
+- name: Deploy Student Enrollment App
+  hosts: webserver
+  become: yes # Use 'sudo' for commands
+  vars:
+    docker_image: jerral/student-enrollment-app:latest
+    container_name: enrollment_app_container
+    graphite_host: 172.17.0.1 # This is usually the IP of the Docker host bridge
+
+  tasks:
+    - name: Ensure Docker is installed (apt)
+      apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+
+    - name: Ensure Docker Python library is installed
+      pip:
+        name: docker
+        state: present
+
+    - name: Pull the latest Docker image
+      community.docker.docker_image:
+        name: "{{ docker_image }}"
+        source: pull
+
+    - name: Stop and remove the existing container if it exists
+      community.docker.docker_container:
+        name: "{{ container_name }}"
+        state: absent
+      # Ignore errors if the container doesn't exist
+      ignore_errors: yes 
+
+    - name: Start the new container
+      community.docker.docker_container:
+        name: "{{ container_name }}"
+        image: "{{ docker_image }}"
+        state: started
+        restart_policy: always
+        published_ports:
+          - "8000:8000"
+        env:
+          # Pass the Graphite host IP to the container as an environment variable
+          GRAPHITE_HOST: "{{ graphite_host }}"
