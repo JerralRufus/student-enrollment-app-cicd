@@ -1,0 +1,21 @@
+version: '3'
+services:
+  graphite:
+    image: graphiteapp/graphite-statsd
+    container_name: graphite
+    ports:
+      - "8080:80"      # Graphite Web UI
+      - "2003-2004:2003-2004" # Carbon receiver
+      - "2023-2024:2023-2024" # Carbon aggregator
+      - "8125:8125/udp" # StatsD
+      - "8126:8126"     # StatsD Admin
+
+  grafana:
+    image: grafana/grafana-oss
+    container_name: grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - graphite
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin # You can change this

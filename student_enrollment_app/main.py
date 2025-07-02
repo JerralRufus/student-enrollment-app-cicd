@@ -3,6 +3,11 @@ from flask import Flask, request, jsonify, render_template
 from .database import db, Student, Course, Enrollment
 from . import metrics
 import os
+import logging # <--- ADD THIS
+
+# ADD THIS BLOCK: Configure logging to output to the console
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 def create_app():
     app = Flask(__name__, template_folder='../templates')
