@@ -1,11 +1,13 @@
-// NOTE: This Jenkinsfile requires Jenkins to have Docker and Ansible installed
-// or to run inside a container that has these tools.
+// This Jenkinsfile uses manual docker commands instead of the 'agent { docker ... }' syntax.
+// It requires the Jenkins agent to have Docker installed and the Jenkins user to have permission to use it.
 pipeline {
     agent any
 
     environment {
         DOCKER_CREDS = credentials('dockerhub-credentials')
-        DOCKER_IMAGE = "${env.DOCKER_CREDS_USR}/student-enrollment-app:${env.BUILD_NUMBER}"
+        // We will tag with the build number to ensure uniqueness
+        DOCKER_IMAGE_NAME = "${env.DOCKER_CREDS_USR}/student-enrollment-app"
+        DOCKER_IMAGE_TAG = "build-${env.BUILD_NUMBER}"
     }
 
     stages {
@@ -16,22 +18,30 @@ pipeline {
         }
         
         stage('Install Dependencies & Test') {
-            // Run tests inside a python container to keep the Jenkins agent clean
-            agent {
-                docker { image 'python:3.9-slim' }
-            }
             steps {
-                sh 'pip install poetry'
-                sh 'poetry config virtualenvs.create false'
-                sh 'poetry install --no-root'
-                sh 'poetry run pytest'
+                script {
+                    // Manually run the tests inside a temporary Docker container
+                    // -v mounts the current Jenkins workspace into the container's /app directory
+                    // -w sets the working directory inside the container
+                    // --rm automatically cleans up the container after it exits
+                    sh """
+                    docker run --rm -v "${pwd}":/app -w /app python:3.9-slim sh -c ' \
+                        pip install poetry && \
+                        poetry config virtualenvs.create false && \
+                        poetry install --no-root && \
+                        poetry run pytest'
+                    """
+                }
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 script {
-                    sh "docker build -t ${DOCKER_IMAGE} ."
+                    // Build the image and tag it with our build number
+                    sh "docker build -t ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} ."
+                    // Also tag it as 'latest' for convenience
+                    sh "docker tag ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} ${DOCKER_IMAGE_NAME}:latest"
                 }
             }
         }
@@ -41,21 +51,22 @@ pipeline {
                 // Jenkins will automatically use the username (_USR) and password (_PSW)
                 withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', passwordVariable: 'DOCKERHUB_PASSWORD', usernameVariable: 'DOCKERHUB_USERNAME')]) {
                     sh "docker login -u ${DOCKERHUB_USERNAME} -p ${DOCKERHUB_PASSWORD}"
-                    sh "docker push ${DOCKER_IMAGE}"
+                    // Push both the build-specific tag and the 'latest' tag
+                    sh "docker push ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+                    sh "docker push ${DOCKER_IMAGE_NAME}:latest"
                 }
             }
         }
         
         stage('Deploy with Ansible') {
             steps {
-                // Make sure Ansible is installed on the Jenkins agent
-                // Note: You may need to configure the host key checking for the first time
-                // or disable it for this example.
+                // Ensure Ansible plugin is installed on Jenkins
+                // Deploy using the 'latest' tag for simplicity
                 ansiblePlaybook(
                     playbook: 'ansible/deploy.yml',
                     inventory: 'ansible/hosts',
                     extraVars: [
-                        docker_image: DOCKER_IMAGE // Override the image with the one we just built
+                        docker_image: "${DOCKER_IMAGE_NAME}:latest" // Override with the image we just pushed
                     ]
                 )
             }
