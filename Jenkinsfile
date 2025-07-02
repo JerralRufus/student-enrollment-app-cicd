@@ -1,83 +1,82 @@
-// Updated and Simplified Jenkinsfile
-// Assumes:
-// 1. "Docker Pipeline" plugin is installed in Jenkins.
-// 2. The Jenkins job is configured for SCM with the correct repository URL and branch ("*/main").
-
+// This Jenkinsfile works WITHOUT the Docker Pipeline plugin.
+// It uses standard shell commands to interact with Docker.
+// It requires that the Jenkins agent has Docker installed.
 pipeline {
-    // Defines the default agent for all stages.
-    // We use a node with the label 'docker' to ensure Docker is available.
-    // If your main Jenkins node has Docker, 'any' will also work.
+    // This pipeline will run on any available agent.
     agent any
 
-    // Environment variables available to all stages
     environment {
-        // Fetches the Docker Hub credentials from Jenkins Credentials Manager
+        // Fetch credentials from Jenkins Credentials Manager by ID.
         DOCKER_CREDS = credentials('dockerhub-credentials')
-        // Uses the username part of the credentials to construct the image name
+        // Construct the image name using the username from the credentials.
         DOCKER_IMAGE_NAME = "${env.DOCKER_CREDS_USR}/student-enrollment-app"
     }
 
     stages {
-        // Stage 1: Checkout
-        // This stage is now just for show. The actual checkout is done automatically
-        // by Jenkins before the pipeline starts, based on the job's SCM configuration.
         stage('Checkout') {
             steps {
-                echo "Code automatically checked out from branch: ${env.BRANCH_NAME}"
+                // The actual checkout is handled by the Jenkins job configuration.
+                // This is just a placeholder to show the stage in the UI.
+                echo "Code checked out from branch: ${env.BRANCH_NAME}"
             }
         }
-
-        // Stage 2: Build & Test
-        // This stage runs its steps inside a temporary Docker container.
-        // The container is automatically started and stopped by the Docker Pipeline plugin.
-        stage('Build & Test') {
-            agent {
-                // Use a standard Python image to run our build and test steps
-                docker { image 'python:3.9-slim' }
-            }
+        
+        stage('Install Dependencies & Test') {
             steps {
-                echo 'Installing dependencies and running tests inside a Docker container...'
-                // These shell commands run inside the 'python:3.9-slim' container
-                sh 'pip install poetry'
-                sh 'poetry config virtualenvs.create false'
-                sh 'poetry install --no-root'
-                sh 'poetry run pytest'
+                // We will manually run our tests inside a temporary Python container.
+                script {
+                    // This command does the following:
+                    //   docker run:      Starts a new container
+                    //   --rm:            Automatically removes the container when it exits (very important for cleanup)
+                    //   -v "${pwd()}":/app: Mounts the current Jenkins workspace directory (your code) into the /app directory inside the container
+                    //   -w /app:         Sets the working directory inside the container to /app
+                    //   python:3.9-slim: The Docker image to use for this container
+                    //   sh -c '...':     The shell command to execute inside the container
+                    sh """
+                    docker run --rm -v "${pwd()}":/app -w /app python:3.9-slim sh -c ' \\
+                        echo "--- Installing dependencies ---" && \\
+                        pip install poetry && \\
+                        poetry config virtualenvs.create false && \\
+                        poetry install --no-root && \\
+                        echo "--- Running tests ---" && \\
+                        poetry run pytest'
+                    """
+                }
             }
         }
 
-        // Stage 3: Build Docker Image
-        // This stage builds the actual application image that will be deployed.
         stage('Build Docker Image') {
             steps {
                 script {
-                    // Build the image using the Dockerfile in our repository
-                    // Tag it with the unique Jenkins build number for versioning
+                    echo "Building Docker image: ${DOCKER_IMAGE_NAME}:${env.BUILD_NUMBER}"
+                    // Build the image using the Dockerfile from our repository
                     sh "docker build -t ${DOCKER_IMAGE_NAME}:${env.BUILD_NUMBER} ."
-                    // Also tag the same image as 'latest' for easy deployment
+                    
+                    echo "Tagging image as 'latest'"
+                    // Also tag the same image as 'latest' for the deployment step
                     sh "docker tag ${DOCKER_IMAGE_NAME}:${env.BUILD_NUMBER} ${DOCKER_IMAGE_NAME}:latest"
                 }
             }
         }
 
-        // Stage 4: Push Docker Image to Docker Hub
-        stage('Push Docker Image') {
+        stage('Push Docker Image to Docker Hub') {
             steps {
-                // The 'DOCKER_CREDS' environment variable is a special credential type.
-                // We use it directly for docker login. Jenkins handles injecting the username and password.
+                echo "Logging into Docker Hub..."
+                // Use the username and password from the credentials variable
                 sh "docker login -u ${env.DOCKER_CREDS_USR} -p ${env.DOCKER_CREDS_PSW}"
-                // Push both the build-specific tag and the 'latest' tag
+                
+                echo "Pushing tag: ${env.BUILD_NUMBER}"
                 sh "docker push ${DOCKER_IMAGE_NAME}:${env.BUILD_NUMBER}"
+                
+                echo "Pushing tag: latest"
                 sh "docker push ${DOCKER_IMAGE_NAME}:latest"
             }
         }
-
-        // Stage 5: Deploy with Ansible
-        // This stage runs the deployment playbook.
+        
         stage('Deploy with Ansible') {
             steps {
-                // Ensure the 'Ansible' plugin is installed in Jenkins.
-                // We pass the image name and 'latest' tag to the playbook.
-                // This ensures Ansible deploys the image we just built and pushed.
+                // This stage uses the Ansible plugin, which is separate from the Docker plugin.
+                // It passes the name of the 'latest' image to the playbook.
                 ansiblePlaybook(
                     playbook: 'ansible/deploy.yml',
                     inventory: 'ansible/hosts',
@@ -88,11 +87,11 @@ pipeline {
             }
         }
     }
-
-    // Post-build actions that run regardless of the pipeline's success or failure
+    
+    // This 'post' block runs after all stages are complete.
     post {
         always {
-            // Clean up the workspace to save disk space
+            // This is good practice to clean up the workspace.
             cleanWs()
             echo 'Pipeline finished.'
         }
