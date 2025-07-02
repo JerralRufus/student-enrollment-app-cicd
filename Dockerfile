@@ -34,10 +34,11 @@ RUN pip install --no-cache-dir poetry
 # Copy only the dependency files from the host
 COPY pyproject.toml poetry.lock* ./
 
-# Install ONLY production dependencies. This makes the final image smaller
+# *** THIS IS THE CORRECTED LINE ***
+# Install ONLY production (main) dependencies. This makes the final image smaller
 # and more secure by excluding tools like pytest.
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-dev --no-root --no-interaction
+    poetry install --only main --no-root --no-interaction
 
 # Copy the validated application code from the 'builder' stage.
 # We copy from the builder because we know its tests have passed.
