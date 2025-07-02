@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-g">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Course Enrollment</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        .container { display: flex; gap: 2em; }
+        .card { border: 1px solid #ccc; padding: 1em; border-radius: 5px; }
+        h1, h2 { color: #333; }
+        select, button { padding: 8px; font-size: 16px; }
+        .message { margin-top: 1em; padding: 1em; border-radius: 5px; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <h1>Student Course Enrollment System</h1>
+    <div id="message-area" class="message" style="display:none;"></div>
+
+    <div class="container">
+        <div class="card">
+            <h2>Enroll in a Course</h2>
+            <form id="enroll-form">
+                <p>
+                    <label for="student-enroll">Student:</label>
+                    <select id="student-enroll" name="student_id">
+                        {% for student in students %}
+                        <option value="{{ student.id }}">{{ student.name }}</option>
+                        {% endfor %}
+                    </select>
+                </p>
+                <p>
+                    <label for="course-enroll">Course:</label>
+                    <select id="course-enroll" name="course_id">
+                        {% for course in courses %}
+                        <option value="{{ course.id }}">{{ course.name }}</option>
+                        {% endfor %}
+                    </select>
+                </p>
+                <button type="submit">Enroll</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>Drop a Course</h2>
+            <form id="drop-form">
+                <p>
+                    <label for="student-drop">Student:</label>
+                    <select id="student-drop" name="student_id">
+                        {% for student in students %}
+                        <option value="{{ student.id }}">{{ student.name }}</option>
+                        {% endfor %}
+                    </select>
+                </p>
+                <p>
+                    <label for="course-drop">Course:</label>
+                    <select id="course-drop" name="course_id">
+                        {% for course in courses %}
+                        <option value="{{ course.id }}">{{ course.name }}</option>
+                        {% endfor %}
+                    </select>
+                </p>
+                <button type="submit">Drop Course</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        async function handleFormSubmit(event, url) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            const response = await fetch(url, {
+                method: 'POST',
+                body: new URLSearchParams(formData)
+            });
+            const result = await response.json();
+            const messageArea = document.getElementById('message-area');
+            messageArea.textContent = result.message;
+            messageArea.className = `message ${response.ok ? 'success' : 'error'}`;
+            messageArea.style.display = 'block';
+        }
+
+        document.getElementById('enroll-form').addEventListener('submit', (e) => handleFormSubmit(e, '/enroll'));
+        document.getElementById('drop-form').addEventListener('submit', (e) => handleFormSubmit(e, '/drop'));
+    </script>
+</body>
+</html>
