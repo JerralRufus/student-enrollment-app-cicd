@@ -1,6 +1,5 @@
-// This Jenkinsfile works WITHOUT the Docker Pipeline plugin.
-// It uses standard shell commands to interact with Docker.
-// **CORRECTED VERSION**
+// FINAL, DEBUGGED Jenkinsfile
+// This version assumes pyproject.toml and Dockerfile are in the root of the repository.
 pipeline {
     agent any
 
@@ -19,10 +18,12 @@ pipeline {
         stage('Install Dependencies & Test') {
             steps {
                 script {
-                    // The key change is here: -w /app/student-enrollment-app
-                    // This sets the working directory to where pyproject.toml is located.
+                    // We mount the workspace to /app and set the working directory to /app
+                    // We then add a debugging 'ls -la' command to see the file structure
                     sh """
-                    docker run --rm -v "${pwd()}":/app -w /app/student-enrollment-app python:3.9-slim sh -c ' \\
+                    docker run --rm -v "${pwd()}":/app -w /app python:3.9-slim sh -c ' \\
+                        echo "--- Listing files in the workspace (/app) ---" && \\
+                        ls -la && \\
                         echo "--- Installing dependencies ---" && \\
                         pip install poetry && \\
                         poetry config virtualenvs.create false && \\
@@ -37,10 +38,9 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    echo "Building Docker image from context: ${pwd()}/student-enrollment-app"
-                    // The key change is here: We specify the build context path explicitly.
-                    // The final '.' tells Docker to use the Dockerfile from that directory.
-                    sh "docker build -t ${DOCKER_IMAGE_NAME}:${env.BUILD_NUMBER} ${pwd()}/student-enrollment-app"
+                    // The build context is now simply the workspace root, which is '.'.
+                    echo "Building Docker image from context: ${pwd()}"
+                    sh "docker build -t ${DOCKER_IMAGE_NAME}:${env.BUILD_NUMBER} ."
                     
                     echo "Tagging image as 'latest'"
                     sh "docker tag ${DOCKER_IMAGE_NAME}:${env.BUILD_NUMBER} ${DOCKER_IMAGE_NAME}:latest"
@@ -48,7 +48,6 @@ pipeline {
             }
         }
 
-        // The Push and Deploy stages remain the same
         stage('Push Docker Image to Docker Hub') {
             steps {
                 echo "Logging into Docker Hub..."
@@ -64,10 +63,10 @@ pipeline {
         
         stage('Deploy with Ansible') {
             steps {
-                // We need to tell Ansible where to find its files, since they are also in a subdirectory now.
+                // Ansible playbook path is now directly in the root
                 ansiblePlaybook(
-                    playbook: 'student-enrollment-app/ansible/deploy.yml',
-                    inventory: 'student-enrollment-app/ansible/hosts',
+                    playbook: 'ansible/deploy.yml',
+                    inventory: 'ansible/hosts',
                     extraVars: [
                         docker_image: "${DOCKER_IMAGE_NAME}:latest"
                     ]
