@@ -1,84 +1,31 @@
-// FINAL, DEBUGGED Jenkinsfile
-// This version assumes pyproject.toml and Dockerfile are in the root of the repository.
+// DEBUGGING Jenkinsfile - This file's only purpose is to list the directory structure.
 pipeline {
     agent any
 
-    environment {
-        DOCKER_CREDS = credentials('dockerhub-credentials')
-        DOCKER_IMAGE_NAME = "${env.DOCKER_CREDS_USR}/student-enrollment-app"
-    }
-
     stages {
         stage('Checkout') {
+            // Jenkins automatically checks out the code here based on your job config.
             steps {
-                echo "Code checked out from branch: ${env.BRANCH_NAME}"
+                echo "Code has been checked out."
             }
         }
-        
-        stage('Install Dependencies & Test') {
+
+        stage('Investigate Workspace') {
             steps {
                 script {
-                    // We mount the workspace to /app and set the working directory to /app
-                    // We then add a debugging 'ls -la' command to see the file structure
+                    echo "--- Listing files in the TOP-LEVEL workspace: ${pwd()} ---"
+                    // This 'ls' command runs directly on the Jenkins agent.
+                    sh 'ls -la'
+
+                    echo "\n\n--- Running a container and listing files INSIDE the container's /app directory ---"
+                    // This 'ls' runs inside the temporary container we use for testing.
                     sh """
                     docker run --rm -v "${pwd()}":/app -w /app python:3.9-slim sh -c ' \\
-                        echo "--- Listing files in the workspace (/app) ---" && \\
-                        ls -la && \\
-                        echo "--- Installing dependencies ---" && \\
-                        pip install poetry && \\
-                        poetry config virtualenvs.create false && \\
-                        poetry install --no-root && \\
-                        echo "--- Running tests ---" && \\
-                        poetry run pytest'
+                        echo "--- Current directory inside container is: \$(pwd) ---"; \\
+                        ls -la'
                     """
                 }
             }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                script {
-                    // The build context is now simply the workspace root, which is '.'.
-                    echo "Building Docker image from context: ${pwd()}"
-                    sh "docker build -t ${DOCKER_IMAGE_NAME}:${env.BUILD_NUMBER} ."
-                    
-                    echo "Tagging image as 'latest'"
-                    sh "docker tag ${DOCKER_IMAGE_NAME}:${env.BUILD_NUMBER} ${DOCKER_IMAGE_NAME}:latest"
-                }
-            }
-        }
-
-        stage('Push Docker Image to Docker Hub') {
-            steps {
-                echo "Logging into Docker Hub..."
-                sh "docker login -u ${env.DOCKER_CREDS_USR} -p ${env.DOCKER_CREDS_PSW}"
-                
-                echo "Pushing tag: ${env.BUILD_NUMBER}"
-                sh "docker push ${DOCKER_IMAGE_NAME}:${env.BUILD_NUMBER}"
-                
-                echo "Pushing tag: latest"
-                sh "docker push ${DOCKER_IMAGE_NAME}:latest"
-            }
-        }
-        
-        stage('Deploy with Ansible') {
-            steps {
-                // Ansible playbook path is now directly in the root
-                ansiblePlaybook(
-                    playbook: 'ansible/deploy.yml',
-                    inventory: 'ansible/hosts',
-                    extraVars: [
-                        docker_image: "${DOCKER_IMAGE_NAME}:latest"
-                    ]
-                )
-            }
-        }
-    }
-    
-    post {
-        always {
-            cleanWs()
-            echo 'Pipeline finished.'
         }
     }
 }
